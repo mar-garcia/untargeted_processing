@@ -1,0 +1,192 @@
+---
+title: "Feature grouping"
+author: "Mar Garcia-Aloy"
+output: 
+  BiocStyle::html_document:
+    toc: false
+    number_sections: false
+    toc_float: false
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+```
+
+In this document I'll perform the feature grouping.
+
+
+# Parameters
+
+```{r}
+polarity <- "NEG" # specify "POS" or "NEG"
+d.rt <- 10
+```
+
+## Libraries
+
+```{r}
+library(xcms)
+library(CompoundDb)
+```
+
+
+
+# Data import
+
+```{r}
+load(paste0("data/RData/data_XCMS_", polarity, ".RData"))
+load(paste0("data/RData/MS2_library_", polarity, ".RData"))
+
+data <- featureValues(xdata, method = "sum", value = "into")
+features <- data.frame(featureDefinitions(xdata)) 
+features$FG <- NA
+```
+
+
+# Feature grouping
+
+## MS2 relationships
+
+First of all I'll consider the relationships between precursor and 
+fragment ions (from DDA experiments.)
+
+```{r}
+n <- 0
+for(i in 1:length(ms2list)
+    ){
+  if(any(unlist(matchWithPpm(ms2list[[i]]@precursor, features$mzmed, 
+                             ppm = 10)))){
+    tmp <- features[unlist(
+      matchWithPpm(ms2list[[i]]@precursor, features$mzmed, ppm = 10)), ]
+    tmp <- tmp[abs(tmp$rtmed - ms2list[[i]]@rt) < d.rt, ]
+    if(nrow(tmp)>1){
+            tmp <- tmp[which.min(abs(tmp$rtmed - ms2list[[i]]@rt)),]
+            }
+    idx <- which(rownames(features)==rownames(tmp))
+    if(any(idx)){
+      n <- n+1
+      for(j in 1:nrow(ms2list[[i]]@spectrum)){
+        if(any(unlist(matchWithPpm(ms2list[[i]]@spectrum[j,1], 
+                                   features$mzmed, ppm = 10)))){
+          tmp <- features[unlist(matchWithPpm(
+            ms2list[[i]]@spectrum[j,1], features$mzmed, ppm = 10)), ]
+          tmp <- tmp[abs(tmp$rtmed - ms2list[[i]]@rt) < d.rt, ]
+          if(nrow(tmp)>1){
+            tmp <- tmp[which.min(abs(tmp$rtmed - ms2list[[i]]@rt)),]
+            }
+          idx <- c(idx, which(rownames(features)==rownames(tmp)))
+        }
+      }
+      if(any(!is.na(features$FG[idx]))){
+        if(length(unique(features$FG[idx][!is.na(
+          features$FG[idx])])) == 1){
+          features$FG[idx] <- unique(features$FG[idx][!is.na(
+          features$FG[idx])])
+        } else {
+          print(i)
+        }
+        n <- n-1
+      } else {
+        features$FG[idx] <- sprintf("FG%02d", n)
+        }
+    }
+  }
+}
+```
+
+## Correlations
+
+```{r}
+for(z in 1:nrow(features)
+  ){ # go feature by feature ("z")
+    ft <- rownames(features)[z]
+    # go only in case that feature "z":
+    if(is.na(features$FG[rownames(features) == ft])){ 
+      # is still not located in any group
+      n <- n + 1 # increase by 1 the code to give the current group
+      
+      # get data of the current feature
+      z.mz <- features$mzmed[rownames(features) == ft]
+      z.rt <- features$rtmed[rownames(features) == ft]
+      
+      # get features co-eluting with feature "z"
+      features.i <- features[
+        ((features$rtmin > 
+            (features$rtmin[rownames(features)==ft] - d.rt)) & 
+           (features$rtmax) < 
+           (features$rtmax[rownames(features)==ft]+ d.rt)),
+        ]
+      
+      # correlate intensities
+      if(nrow(features.i) > 1){
+      #  tmp <- data[!grepl("QC", rownames(data)), 
+      #              colnames(data) %in% rownames(features.i)]
+      #  cor.i <- c()
+      #  for(i in seq(ncol(tmp))){
+      #    tmp2 <- cbind(tmp[, ft], tmp[,i])
+      #    if(sum(complete.cases(tmp2))>1){
+      #      cor.i <- c(cor.i, cor(log2(tmp2[,1]), log2(tmp2[,2]), 
+      #                            use = "complete.obs"))
+      #    } else {
+      #      cor.i <- c(cor.i, 0)
+      #    }
+      #  }
+      #  features.i$cor_int <- cor.i
+      #  features.i <- features.i[features.i$cor_int > cor.thr.i,]
+        
+        # correlate peak shapes
+        #xdata_n <- filterFile(
+        #  xdata, 
+        #  which(xdata$file_name == 
+        #          gsub("mzData", "mzXML", 
+        #               rownames(data)[order(data[, ft], decreasing=TRUE)[1]])))
+      xdata_n <- xdata
+        rtr <- c(min(features.i$rtmin), 
+                 max(features.i$rtmax)) + d.rt * c(-1, 1)
+        features.i$cor_ps <- NA
+        chr1 <- chromatogram(xdata_n, 
+                             mz = z.mz + 0.01 * c(-1, 1), 
+                             rt = rtr, 
+                             aggregationFun = "max")
+        for(i in seq(nrow(features.i))){
+          chr2 <- chromatogram(xdata_n, 
+                               mz = features.i$mzmed[i] + 0.01 * c(-1, 1), 
+                               rt = rtr, 
+                               aggregationFun = "max")
+          features.i$cor_ps[i] <- correlate(chr1[[1]], chr2[[1]])
+        } # close EIC
+        features.i$cor_ps[is.na(features.i$cor_ps)] <- 0
+        features.i$cor_ps[rownames(features.i) == ft] <- 1
+        features.i <- features.i[features.i$cor_ps > 0.9,]
+      } else if(nrow(features.i) == 1){
+        features.i$cor_int <- 1
+        features.i$cor_ps <- 1
+      }
+      
+      # add the info of grouped peaks in results matrix
+      if(any(!is.na(features$FG[idx]))){
+        if(length(unique(features$FG[idx][!is.na(
+          features$FG[idx])])) == 1){
+          features$FG[idx] <- unique(features$FG[idx][!is.na(
+          features$FG[idx])])
+        } else {
+          print(z)
+        }
+        n <- n-1
+      } else {
+        features$FG[idx] <- sprintf("FG%02d", n)
+        }
+    } # close if "is.na(cmp[z])"
+  } # close results "z"
+```
+
+
+
+# Session information
+
+```{r session}
+save.image("tmp.RData")
+
+Sys.time()-startpoint
+devtools::session_info()
+```
