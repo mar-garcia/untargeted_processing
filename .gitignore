@@ -1,3 +1,9 @@
+*.mzML
+*.mzXML
+*.mzData
+*.RData
+*.html
+
 # History files
 .Rhistory
 .Rapp.history
