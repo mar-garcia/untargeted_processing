@@ -3,6 +3,7 @@
 *.mzData
 *.RData
 *.html
+x_*.R
 
 # History files
 .Rhistory
