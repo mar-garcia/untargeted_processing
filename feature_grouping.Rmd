@@ -17,14 +17,14 @@ In this document I'll perform the feature grouping.
 
 # Parameters
 
-```{r}
+```{r parameters}
 polarity <- "NEG" # specify "POS" or "NEG"
 d.rt <- 10
 ```
 
 ## Libraries
 
-```{r, message=FALSE, warning=FALSE}
+```{r libraries, message=FALSE, warning=FALSE}
 library(xcms)
 library(CompoundDb)
 ```
@@ -33,7 +33,7 @@ library(CompoundDb)
 
 # Data import
 
-```{r}
+```{r import}
 load(paste0("data/RData/data_XCMS_", polarity, ".RData"))
 load(paste0("data/RData/MS2_library_", polarity, ".RData"))
 
@@ -50,7 +50,7 @@ features$FG <- NA
 First of all I'll consider the relationships between precursor and 
 fragment ions (from DDA experiments.)
 
-```{r}
+```{r ms2-relations}
 n <- 0
 for(i in 1:length(ms2list)
 ){
@@ -122,7 +122,7 @@ rm(chr1, chr2, features.i, tmp, xdata_n, i, idx, j, mzvals, rtr)
 
 ## Correlations
 
-```{r}
+```{r correlations}
 for(z in 1:nrow(features)
 ){ # go feature by feature ("z")
   ft <- rownames(features)[z]
