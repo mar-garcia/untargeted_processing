@@ -52,9 +52,9 @@ data_raw <- readMSData(
 ```{r peak-detection, message=FALSE}
 cwp <- CentWaveParam(ppm = 20,
                      peakwidth = c(2, 40),
-                     prefilter = c(5, 10000),
-                     snthresh = 100,
-                     noise = 3000,
+                     prefilter = c(3, 5000),
+                     snthresh = 5,
+                     noise = 1000,
                      mzdiff = 0.001,
                      integrate = 2)
 
@@ -67,7 +67,7 @@ xdata <- findChromPeaks(data_raw, param = cwp)
 ```{r filter-intensity}
 xdata <- refineChromPeaks(xdata, 
                           param = FilterIntensityParam(
-                            nValues = 5, threshold = 10000))
+                            nValues = 3, threshold = 5000))
 ```
 
 
