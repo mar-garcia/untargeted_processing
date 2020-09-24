@@ -40,6 +40,9 @@ load(paste0("data/RData/MS2_library_", polarity, ".RData"))
 data <- featureValues(xdata, method = "sum", value = "into")
 features <- data.frame(featureDefinitions(xdata)) 
 features$FG <- NA
+
+add <- read.csv("data/adducts.csv")
+add <- add[add$polarity == "X" | add$polarity == polarity, ]
 ```
 
 
@@ -51,20 +54,43 @@ First of all I'll consider the relationships between precursor and
 fragment ions (from DDA experiments.)
 
 ```{r ms2-relations}
+features$MS2 <- NA
+
+# order MS2 spectras by intensity
+ms2int = c()
+for(i in 1:length(ms2list)){
+  ms2int = c(ms2int, max(ms2list[[i]]@spectrum[,2]))
+}
+
+# seed for FG nubmer
 n <- 0
-for(i in 1:length(ms2list)
+
+for(l in 1:3#length(ms2list)
 ){
+  i = order(-ms2int)[l]
+  
+  # if there is any FT which mzval match with precursor "i"....
   if(any(unlist(matchWithPpm(ms2list[[i]]@precursor, features$mzmed, 
                              ppm = 10)))){
+    
+    # get the info of that FT(s)
     tmp <- features[unlist(
       matchWithPpm(ms2list[[i]]@precursor, features$mzmed, ppm = 10)), ]
+    
+    # select those FT with the same RT than the precursor "i"
     tmp <- tmp[abs(tmp$rtmed - ms2list[[i]]@rt) < d.rt, ]
+    
+    # if there is >1 FT, select the one with the closest RT
     if(nrow(tmp)>1){
       tmp <- tmp[which.min(abs(tmp$rtmed - ms2list[[i]]@rt)),]
     }
+    
+    # get the FT name of the selected FT
     idx <- which(rownames(features)==rownames(tmp))
+    
     if(any(idx)){
       n <- n+1
+      # check if any of the fragments is a FT
       for(j in 1:nrow(ms2list[[i]]@spectrum)){
         if(any(unlist(matchWithPpm(ms2list[[i]]@spectrum[j,1], 
                                    features$mzmed, ppm = 10)))){
@@ -84,16 +110,14 @@ for(i in 1:length(ms2list)
         d.rt * c(-1, 1)
       features.i$cor_ps <- NA
       xdata_n <- xdata
-      chr1 <- chromatogram(xdata_n, 
-                           mz = ms2list[[i]]@precursor + 0.01 * c(-1, 1), 
-                           rt = rtr, 
-                           aggregationFun = "max")
-      for(i in seq(nrow(features.i))){
-        chr2 <- chromatogram(xdata_n, 
-                             mz = features.i$mzmed[i] + 0.01 * c(-1, 1), 
-                             rt = rtr, 
-                             aggregationFun = "max")
-        features.i$cor_ps[i] <- correlate(chr1[[1]], chr2[[1]])
+      chr1 <- chromatogram(
+        xdata_n, mz = ms2list[[i]]@precursor + 0.01 * c(-1, 1), 
+        rt = rtr, aggregationFun = "max")
+      for(k in seq(nrow(features.i))){
+        chr2 <- chromatogram(
+          xdata_n, mz = features.i$mzmed[k] + 0.01 * c(-1, 1), 
+          rt = rtr, aggregationFun = "max")
+        features.i$cor_ps[k] <- correlate(chr1[[1]], chr2[[1]])
       } # close EIC
       features.i$cor_ps[is.na(features.i$cor_ps)] <- 0
       #features.i$cor_ps[rownames(features.i) == ft] <- 1
@@ -111,14 +135,54 @@ for(i in 1:length(ms2list)
         }
         n <- n-1
       } else {
-        features$FG[idx] <- sprintf("FG%02d", n)
+        features$FG[idx] <- sprintf("FG%03d", n)
       }
-      
-    } # close "if: any(idx)" (i.e., any FT match with precursor "i")
-  }
+      for(j in 1:length(idx)){
+        if(is.na(features$MS2[idx[j]])){
+          if(length(add$assignation[abs((
+            features$mzmed[idx[j]] -ms2list[[i]]@precursor) - 
+            add$mzdiff) < 0.001])>0){
+            features$MS2[idx[j]] <- 
+              paste(round(ms2list[[i]]@precursor, 4),
+                    add$assignation[abs((
+                      features$mzmed[idx[j]] -ms2list[[i]]@precursor) - 
+                        add$mzdiff) < 0.001])
+          } else {
+            features$MS2[idx[j]] <- paste(
+              round(ms2list[[i]]@precursor, 4), "[frag]*")
+          }
+        } else {
+          if(length(add$assignation[abs((
+            features$mzmed[idx[j]] -ms2list[[i]]@precursor) - 
+            add$mzdiff) < 0.001])>0){
+            features$MS2[idx[j]] <- paste(
+              features$MS2[idx[j]], 
+              paste(round(ms2list[[i]]@precursor, 4),
+                    add$assignation[abs((
+                      features$mzmed[idx[j]] -ms2list[[i]]@precursor) - 
+                        add$mzdiff) < 0.001]), sep = "; ")
+          } else {
+            features$MS2[idx[j]] <- paste(
+              features$MS2[idx[j]], 
+              paste(round(ms2list[[i]]@precursor, 4), "[frag]*"), 
+              sep = "; ")
+          }
+        }
+      }
+    }
+  } # close "if: any(idx)" (i.e., any FT match with precursor "i")
 }
-rm(chr1, chr2, features.i, tmp, xdata_n, i, idx, j, mzvals, rtr)
+
+rm(chr1, chr2, features.i, tmp, xdata_n, i, idx, j, rtr)
+
+if(polarity == "NEG"){
+  features$MS2 <- gsub("\\*", "-", features$MS2)
+} else if(polarity == "POS"){
+  features$MS2 <- gsub("\\*", "+", features$MS2)
+}
 ```
+
+
 
 ## Correlations
 
@@ -206,7 +270,7 @@ for(z in 1:nrow(features)
       }
       n <- n-1
     } else {
-      features$FG[idx] <- sprintf("FG%02d", n)
+      features$FG[idx] <- sprintf("FG%03d", n)
     }
   } # close if "is.na(cmp[z])"
 } # close results "z"
