@@ -36,7 +36,7 @@ library(CluMSID)
 
 ```{r import}
 load(paste0("data/RData/data_XCMS_", polarity, ".RData"))
-load(paste0("data/RData/MS2_library_", polarity, ".RData"))
+load(paste0("data/RData/MS2_library_", polarity, "_merged.RData"))
 
 data <- featureValues(xdata, method = "sum", value = "into")
 features <- data.frame(featureDefinitions(xdata)) 
@@ -54,28 +54,7 @@ add <- add[add$polarity == "X" | add$polarity == polarity, ]
 First of all I'll consider the relationships between precursor and 
 fragment ions (from DDA experiments).  
 
-Before starting with this, since probably there is redundant MS2 spectra, that is >1 MS2 spectra for the same precursor ion I would like to generate consensus spectra from the MS2 spectra that derive from the same precursor.
-
-```{r merge-spectra, eval=FALSE}
-ptable <- data.frame(
-  "FT" = rownames(features),
-  "mz" = features$mzmed,
-  "RT" = features$rtmed
-)
-featlist2 <- mergeMS2spectra(ms2list,
-                             peaktable = ptable,
-                             exclude_unmatched = FALSE)
-rm(ms2list, ptable)
-save.image("data/RData/featlist2.RData")
-```
-
-
-Now, I'm going to start doing the feature grouping following a series of criteria.
-
 ```{r ms2-relations}
-load("data/RData/featlist2.RData")
-rm(ms2list)
-
 features$MS2 <- NA
 
 # order MS2 spectras by intensity
@@ -201,7 +180,7 @@ for(l in 1:length(featlist2)){
 ```
 
 
-```{r ms2-relations}
+```{r ms2-relations-2}
 if(polarity == "NEG"){
   features$MS2 <- gsub("\\*", "-", features$MS2)
 } else if(polarity == "POS"){
@@ -303,7 +282,10 @@ for(z in 1:nrow(features)
       features$FG[idx] <- sprintf("FG%03d", n)
     }
   } # close if "is.na(cmp[z])"
+  #save.image("data/RData/tmp.RData")
 } # close results "z"
+rm(chr1, chr2, features.i, tmp, xdata_n, i, n, rtr, z, z.mz, z.rt, ft, 
+   idx, d.rt)
 ```
 
 
@@ -311,7 +293,7 @@ for(z in 1:nrow(features)
 # Session information
 
 ```{r session}
-save.image("tmp.RData")
+save(features, file = paste0("data/RData/FT_", polarity, ".RData"))
 
 Sys.time()-startpoint
 devtools::session_info()

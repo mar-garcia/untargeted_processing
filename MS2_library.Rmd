@@ -51,6 +51,11 @@ save(ms2list,
      file = paste0("data/RData/MS2_library_", polarity, ".RData"))
 
 
+# generate consensus spectra from the redundant MS2 spectra that derive from the same precursor.
+featlist2 <- mergeMS2spectra(ms2list)
+save(featlist2, 
+     file = paste0("data/RData/MS2_library_", polarity, "_merged.RData"))
+                             
 Sys.time()-startpoint
 
 devtools::session_info()

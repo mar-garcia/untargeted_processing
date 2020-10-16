@@ -22,7 +22,7 @@ This file covers chromatographic peak detection, alignment, correspondence and p
 ## Parameters
 
 ```{r parameters}
-polarity <- "NEG" # specify "POS" or "NEG"
+polarity <- "POS" # specify "POS" or "NEG"
 
 MZML_PATH <- paste0("mzML_2019_02/", polarity, "_FS_fixed/")
 dir.create("data/RData/", recursive = TRUE, showWarnings = FALSE)
@@ -52,7 +52,7 @@ data_raw <- readMSData(
 ```{r peak-detection, message=FALSE}
 cwp <- CentWaveParam(ppm = 20,
                      peakwidth = c(2, 40),
-                     prefilter = c(3, 10000),
+                     prefilter = c(3, 1000000),
                      snthresh = 5,
                      noise = 1000,
                      mzdiff = 0.001,
@@ -68,7 +68,7 @@ xdata <- findChromPeaks(data_raw, param = cwp)
 ```{r filter-intensity}
 xdata <- refineChromPeaks(xdata, 
                           param = FilterIntensityParam(
-                            nValues = 3, threshold = 10000))
+                            nValues = 3, threshold = 1000000))
 ```
 
 
