@@ -27,6 +27,7 @@ d.rt <- 10
 ```{r libraries, message=FALSE, warning=FALSE}
 library(xcms)
 library(CompoundDb)
+library(CluMSID)
 ```
 
 
@@ -51,53 +52,76 @@ add <- add[add$polarity == "X" | add$polarity == polarity, ]
 ## MS2 relationships
 
 First of all I'll consider the relationships between precursor and 
-fragment ions (from DDA experiments).
+fragment ions (from DDA experiments).  
+
+Before starting with this, since probably there is redundant MS2 spectra, that is >1 MS2 spectra for the same precursor ion I would like to generate consensus spectra from the MS2 spectra that derive from the same precursor.
+
+```{r merge-spectra, eval=FALSE}
+ptable <- data.frame(
+  "FT" = rownames(features),
+  "mz" = features$mzmed,
+  "RT" = features$rtmed
+)
+featlist2 <- mergeMS2spectra(ms2list,
+                             peaktable = ptable,
+                             exclude_unmatched = FALSE)
+rm(ms2list, ptable)
+save.image("data/RData/featlist2.RData")
+```
+
+
+Now, I'm going to start doing the feature grouping following a series of criteria.
 
 ```{r ms2-relations}
+load("data/RData/featlist2.RData")
+rm(ms2list)
+
 features$MS2 <- NA
 
 # order MS2 spectras by intensity
 ms2int = c()
-for(i in 1:length(ms2list)){
-  ms2int <- c(ms2int, max(ms2list[[i]]@spectrum[,2]))
+for(i in 1:length(featlist2)){
+  ms2int <- c(ms2int, max(featlist2[[i]]@spectrum[,2]))
 }
 
-# seed for FG nubmer
+# seed for FG number
 n <- 0
 
-for(l in 1:length(ms2list)){
+for(l in 1:length(featlist2)){
   i <- order(-ms2int)[l]
   
   # if there is any FT which mzval match with precursor "i"....
-  if(any(unlist(matchWithPpm(ms2list[[i]]@precursor, features$mzmed, 
+  if(any(unlist(matchWithPpm(featlist2[[i]]@precursor, features$mzmed, 
                              ppm = 10)))){
     
     # get the info of that FT(s)
     tmp <- features[unlist(
-      matchWithPpm(ms2list[[i]]@precursor, features$mzmed, ppm = 10)), ]
+      matchWithPpm(featlist2[[i]]@precursor, features$mzmed, ppm = 10)), ]
     
     # select those FT with the same RT than the precursor "i"
-    tmp <- tmp[abs(tmp$rtmed - ms2list[[i]]@rt) < d.rt, ]
+    tmp <- tmp[abs(tmp$rtmed - featlist2[[i]]@rt) < d.rt, ]
     
     # if there is >1 FT, select the one with the closest RT
     if(nrow(tmp)>1){
-      tmp <- tmp[which.min(abs(tmp$rtmed - ms2list[[i]]@rt)),]
+      tmp <- tmp[which.min(abs(tmp$rtmed - featlist2[[i]]@rt)),]
     }
     
     # get the FT name of the selected FT
     idx <- which(rownames(features)==rownames(tmp))
     
     if(any(idx)){
-      n <- n+1
+      n <- n + 1
+      ft <- rownames(features)[idx]
+      
       # check if any of the fragments is a FT
-      for(j in 1:nrow(ms2list[[i]]@spectrum)){
-        if(any(unlist(matchWithPpm(ms2list[[i]]@spectrum[j,1], 
+      for(j in 1:nrow(featlist2[[i]]@spectrum)){
+        if(any(unlist(matchWithPpm(featlist2[[i]]@spectrum[j,1], 
                                    features$mzmed, ppm = 10)))){
           tmp <- features[unlist(matchWithPpm(
-            ms2list[[i]]@spectrum[j,1], features$mzmed, ppm = 10)), ]
-          tmp <- tmp[abs(tmp$rtmed - ms2list[[i]]@rt) < d.rt, ]
+            featlist2[[i]]@spectrum[j,1], features$mzmed, ppm = 10)), ]
+          tmp <- tmp[abs(tmp$rtmed - featlist2[[i]]@rt) < d.rt, ]
           if(nrow(tmp)>1){
-            tmp <- tmp[which.min(abs(tmp$rtmed - ms2list[[i]]@rt)),]
+            tmp <- tmp[which.min(abs(tmp$rtmed - featlist2[[i]]@rt)),]
           }
           idx <- c(idx, which(rownames(features)==rownames(tmp)))
         }
@@ -109,18 +133,21 @@ for(l in 1:length(ms2list)){
         d.rt * c(-1, 1)
       features.i$cor_ps <- NA
       xdata_n <- xdata
+      register(SerialParam())
       chr1 <- chromatogram(
-        xdata_n, mz = ms2list[[i]]@precursor + 0.01 * c(-1, 1), 
+        xdata_n, mz = featlist2[[i]]@precursor + 0.01 * c(-1, 1), 
         rt = rtr, aggregationFun = "max")
       for(k in seq(nrow(features.i))){
         chr2 <- chromatogram(
           xdata_n, mz = features.i$mzmed[k] + 0.01 * c(-1, 1), 
           rt = rtr, aggregationFun = "max")
-        features.i$cor_ps[k] <- correlate(chr1[[1]], chr2[[1]])
+        features.i$cor_ps[k] <- xcms::correlate(
+          chr1[[chromPeaks(chr1)[which.max(chromPeaks(chr1)[, "into"]), "column"]]], 
+          chr2[[chromPeaks(chr2)[which.max(chromPeaks(chr2)[, "into"]), "column"]]])
       } # close EIC
       features.i$cor_ps[is.na(features.i$cor_ps)] <- 0
-      #features.i$cor_ps[rownames(features.i) == ft] <- 1
-      features.i <- features.i[features.i$cor_ps > 0.9,]
+      features.i$cor_ps[rownames(features.i) == ft] <- 1
+      features.i <- features.i[features.i$cor_ps > 0.7,]
       
       # Assign FG group:
       idx <- which(rownames(features) %in% rownames(features.i))
@@ -139,31 +166,31 @@ for(l in 1:length(ms2list)){
       for(j in 1:length(idx)){
         if(is.na(features$MS2[idx[j]])){
           if(length(add$assignation[abs((
-            features$mzmed[idx[j]] -ms2list[[i]]@precursor) - 
+            features$mzmed[idx[j]] -featlist2[[i]]@precursor) - 
             add$mzdiff) < 0.001])>0){
             features$MS2[idx[j]] <- 
-              paste(round(ms2list[[i]]@precursor, 4),
+              paste(round(featlist2[[i]]@precursor, 4),
                     add$assignation[abs((
-                      features$mzmed[idx[j]] -ms2list[[i]]@precursor) - 
+                      features$mzmed[idx[j]] -featlist2[[i]]@precursor) - 
                         add$mzdiff) < 0.001])
           } else {
             features$MS2[idx[j]] <- paste(
-              round(ms2list[[i]]@precursor, 4), "[frag]*")
+              round(featlist2[[i]]@precursor, 4), "[frag]*")
           }
         } else {
           if(length(add$assignation[abs((
-            features$mzmed[idx[j]] -ms2list[[i]]@precursor) - 
+            features$mzmed[idx[j]] -featlist2[[i]]@precursor) - 
             add$mzdiff) < 0.001])>0){
             features$MS2[idx[j]] <- paste(
               features$MS2[idx[j]], 
-              paste(round(ms2list[[i]]@precursor, 4),
+              paste(round(featlist2[[i]]@precursor, 4),
                     add$assignation[abs((
-                      features$mzmed[idx[j]] -ms2list[[i]]@precursor) - 
+                      features$mzmed[idx[j]] -featlist2[[i]]@precursor) - 
                         add$mzdiff) < 0.001]), sep = "; ")
           } else {
             features$MS2[idx[j]] <- paste(
               features$MS2[idx[j]], 
-              paste(round(ms2list[[i]]@precursor, 4), "[frag]*"), 
+              paste(round(featlist2[[i]]@precursor, 4), "[frag]*"), 
               sep = "; ")
           }
         }
@@ -171,14 +198,18 @@ for(l in 1:length(ms2list)){
     }
   } # close "if: any(idx)" (i.e., any FT match with precursor "i")
 }
+```
 
+
+```{r ms2-relations}
 if(polarity == "NEG"){
   features$MS2 <- gsub("\\*", "-", features$MS2)
 } else if(polarity == "POS"){
   features$MS2 <- gsub("\\*", "+", features$MS2)
 }
 
-#rm(add, data, ms2list, i, l, ms2int)
+rm(add, data, ms2int, featlist2, ft, chr1, chr2, features.i, tmp, 
+   xdata_n, idx, i, l, j, k, rtr)
 ```
 
 
