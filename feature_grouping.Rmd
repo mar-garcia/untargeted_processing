@@ -51,7 +51,7 @@ add <- add[add$polarity == "X" | add$polarity == polarity, ]
 ## MS2 relationships
 
 First of all I'll consider the relationships between precursor and 
-fragment ions (from DDA experiments.)
+fragment ions (from DDA experiments).
 
 ```{r ms2-relations}
 features$MS2 <- NA
@@ -59,15 +59,14 @@ features$MS2 <- NA
 # order MS2 spectras by intensity
 ms2int = c()
 for(i in 1:length(ms2list)){
-  ms2int = c(ms2int, max(ms2list[[i]]@spectrum[,2]))
+  ms2int <- c(ms2int, max(ms2list[[i]]@spectrum[,2]))
 }
 
 # seed for FG nubmer
 n <- 0
 
-for(l in 1:3#length(ms2list)
-){
-  i = order(-ms2int)[l]
+for(l in 1:length(ms2list)){
+  i <- order(-ms2int)[l]
   
   # if there is any FT which mzval match with precursor "i"....
   if(any(unlist(matchWithPpm(ms2list[[i]]@precursor, features$mzmed, 
@@ -173,13 +172,13 @@ for(l in 1:3#length(ms2list)
   } # close "if: any(idx)" (i.e., any FT match with precursor "i")
 }
 
-rm(chr1, chr2, features.i, tmp, xdata_n, i, idx, j, rtr)
-
 if(polarity == "NEG"){
   features$MS2 <- gsub("\\*", "-", features$MS2)
 } else if(polarity == "POS"){
   features$MS2 <- gsub("\\*", "+", features$MS2)
 }
+
+#rm(add, data, ms2list, i, l, ms2int)
 ```
 
 
