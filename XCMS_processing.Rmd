@@ -52,12 +52,13 @@ data_raw <- readMSData(
 ```{r peak-detection, message=FALSE}
 cwp <- CentWaveParam(ppm = 20,
                      peakwidth = c(2, 40),
-                     prefilter = c(3, 5000),
+                     prefilter = c(3, 10000),
                      snthresh = 5,
                      noise = 1000,
                      mzdiff = 0.001,
                      integrate = 2)
 
+register(SerialParam())
 xdata <- findChromPeaks(data_raw, param = cwp)
 ```
 
@@ -67,7 +68,7 @@ xdata <- findChromPeaks(data_raw, param = cwp)
 ```{r filter-intensity}
 xdata <- refineChromPeaks(xdata, 
                           param = FilterIntensityParam(
-                            nValues = 3, threshold = 5000))
+                            nValues = 3, threshold = 10000))
 ```
 
 
@@ -135,7 +136,7 @@ allow definition of features that are present in fewer individuals.
 ```{r correspondance}
 pdp <- PeakDensityParam(rep(1, length(fileNames(xdata))),
                         #sampleGroups = xdata$type,
-                        minFraction = 1,
+                        minFraction = 0,#1,
                         binSize = 0.02,
                         bw = 2)
 xdata <- groupChromPeaks(xdata, param = pdp)
