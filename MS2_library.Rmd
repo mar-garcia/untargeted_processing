@@ -13,7 +13,7 @@ spectra using the DDA method.
 
 
 ```{r, warning=FALSE}
-polarity <- "NEG"  # specify "POS" or "NEG"
+polarity <- "POS"  # specify "POS" or "NEG"
 
 startpoint <- Sys.time()
 
@@ -52,7 +52,7 @@ save(ms2list,
 
 
 # generate consensus spectra from the redundant MS2 spectra that derive from the same precursor.
-featlist2 <- mergeMS2spectra(ms2list)
+featlist2 <- mergeMS2spectra(ms2list, rt_tolerance = 15)
 save(featlist2, 
      file = paste0("data/RData/MS2_library_", polarity, "_merged.RData"))
                              

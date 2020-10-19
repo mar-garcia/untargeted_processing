@@ -54,8 +54,9 @@ add <- add[add$polarity == "X" | add$polarity == polarity, ]
 First of all I'll consider the relationships between precursor and 
 fragment ions (from DDA experiments).  
 
-```{r ms2-relations}
+```{r ms2-relations, warning=FALSE}
 features$MS2 <- NA
+dt <- as.data.frame(t(featureValues(xdata, method = "sum", value = "into")))
 
 # order MS2 spectras by intensity
 ms2int = c()
@@ -67,7 +68,7 @@ for(i in 1:length(featlist2)){
 n <- 0
 
 for(l in 1:length(featlist2)
-){
+    ){
   i <- order(-ms2int)[l]
   
   # if there is any FT which mzval match with precursor "i"....
@@ -76,7 +77,8 @@ for(l in 1:length(featlist2)
     
     # get the info of that FT(s)
     tmp <- features[unlist(
-      matchWithPpm(featlist2[[i]]@precursor, features$mzmed, ppm = 10)), ]
+      matchWithPpm(featlist2[[i]]@precursor, features$mzmed, ppm = 10)
+      ), ]
     
     # select those FT with the same RT than the precursor "i"
     tmp <- tmp[abs(tmp$rtmed - featlist2[[i]]@rt) < d.rt, ]
@@ -87,7 +89,7 @@ for(l in 1:length(featlist2)
     }
     
     # get the FT name of the selected FT
-    idx <- which(rownames(features)==rownames(tmp))
+    idx <- which(rownames(features) == rownames(tmp))
     
     if(any(idx)){
       n <- n + 1
@@ -99,16 +101,33 @@ for(l in 1:length(featlist2)
                                    features$mzmed, ppm = 10)))){
           tmp <- features[unlist(matchWithPpm(
             featlist2[[i]]@spectrum[j,1], features$mzmed, ppm = 10)), ]
-          tmp <- tmp[abs(tmp$rtmed - featlist2[[i]]@rt) < d.rt, ]
-          if(nrow(tmp)>1){
-            tmp <- tmp[which.min(abs(tmp$rtmed - featlist2[[i]]@rt)),]
+          tmp <- tmp[abs(tmp$rtmed - features$rtmed[idx]) < d.rt, ]
+          if(nrow(tmp) > 1){
+            tmp <- tmp[which.min(abs(tmp$rtmed - features$rtmed[idx])),]
           }
-          idx <- c(idx, which(rownames(features)==rownames(tmp)))
+          idx <- c(idx, which(rownames(features) == rownames(tmp)))
         }
       }
       
-      # Check correlations: (MISSING INTENSITY CORRELATIONS!!!)
+      # Check correlations:
       features.i <- features[idx,]
+      #tmp <- dt[!grepl("QC", rownames(dt)), 
+      #          colnames(dt) %in% rownames(features.i)]
+      #tmp <- tmp[, match(rownames(features.i), colnames(tmp))]
+      #cor.i <- c()
+      #for(i in seq(ncol(tmp))){
+      #  tmp2 <- cbind(tmp[, ft], tmp[,i])
+      #  if(sum(complete.cases(tmp2))>1){
+      #    cor.i <- c(cor.i, cor(log2(tmp2[,1]), log2(tmp2[,2]), 
+      #                          use = "complete.obs"))
+      #  } else {
+      #    cor.i <- c(cor.i, 0)
+      #  }
+      #}
+      #features.i$cor_int <- cor.i
+      #features.i <- features.i[features.i$cor_int > 0.7,]
+      
+      
       rtr <- c(min(features.i$rtmin), max(features.i$rtmax)) + 
         d.rt * c(-1, 1)
       features.i$cor_ps <- NA
@@ -122,8 +141,10 @@ for(l in 1:length(featlist2)
           xdata_n, mz = features.i$mzmed[k] + 0.01 * c(-1, 1), 
           rt = rtr, aggregationFun = "max")
         features.i$cor_ps[k] <- xcms::correlate(
-          chr1[[chromPeaks(chr1)[which.max(chromPeaks(chr1)[, "into"]), "column"]]], 
-          chr2[[chromPeaks(chr2)[which.max(chromPeaks(chr2)[, "into"]), "column"]]])
+          chr1[[chromPeaks(chr1)[
+            which.max(chromPeaks(chr1)[, "into"]), "column"]]], 
+          chr2[[chromPeaks(chr2)[
+            which.max(chromPeaks(chr2)[, "into"]), "column"]]])
       } # close EIC
       features.i$cor_ps[is.na(features.i$cor_ps)] <- 0
       features.i$cor_ps[rownames(features.i) == ft] <- 1
@@ -137,7 +158,7 @@ for(l in 1:length(featlist2)
           features$FG[idx] <- unique(features$FG[idx][!is.na(
             features$FG[idx])])
         } else {
-          print(i)
+          print(l)
         }
         n <- n-1
       } else {
@@ -197,9 +218,8 @@ rm(add, data, ms2int, featlist2, ft, chr1, chr2, features.i, tmp,
 ## Correlations
 
 ```{r correlations}
-dt <- as.data.frame(t(featureValues(xdata, method = "sum", value = "into")))
-
-for(z in 1:nrow(features)){ # go feature by feature ("z")
+for(z in 1:3#nrow(features)
+    ){ # go feature by feature ("z")
   ft <- rownames(features)[z]
   # go only in case that feature "z":
   if(is.na(features$FG[rownames(features) == ft])){ 
@@ -221,20 +241,21 @@ for(z in 1:nrow(features)){ # go feature by feature ("z")
     # correlate intensities
     if(nrow(features.i) > 1){
       
-      tmp <- dt[!grepl("QC", rownames(dt)), 
-                colnames(dt) %in% rownames(features.i)]
-      cor.i <- c()
-      for(i in seq(ncol(tmp))){
-        tmp2 <- cbind(tmp[, ft], tmp[,i])
-        if(sum(complete.cases(tmp2))>1){
-          cor.i <- c(cor.i, cor(log2(tmp2[,1]), log2(tmp2[,2]), 
-                                use = "complete.obs"))
-        } else {
-          cor.i <- c(cor.i, 0)
-        }
-      }
-      features.i$cor_int <- cor.i
-      features.i <- features.i[features.i$cor_int > 0.7,]
+      #tmp <- dt[!grepl("QC", rownames(dt)), 
+      #          colnames(dt) %in% rownames(features.i)]
+      #tmp <- tmp[, match(rownames(features.i), colnames(tmp))]
+      #cor.i <- c()
+      #for(i in seq(ncol(tmp))){
+      #  tmp2 <- cbind(tmp[, ft], tmp[,i])
+      #  if(sum(complete.cases(tmp2))>1){
+      #    cor.i <- c(cor.i, cor(log2(tmp2[,1]), log2(tmp2[,2]), 
+      #                          use = "complete.obs"))
+      #  } else {
+      #    cor.i <- c(cor.i, 0)
+      #  }
+      #}
+      #features.i$cor_int <- cor.i
+      #features.i <- features.i[features.i$cor_int > 0.7,]
       
       # correlate peak shapes
       xdata_n <- xdata

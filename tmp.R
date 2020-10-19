@@ -79,7 +79,15 @@ for(k in 1:length(FG)
     }
     
     ft$FGx <- FG[k]
-    i <- which.max(unlist(lapply(strsplit(ft$ann, "; "), length)))
+    tmp <- ft[ft$ann != "NA", ]
+    idx <- unlist(lapply(strsplit(tmp$ann, "; "), length))
+    idx <- which(rownames(ft) == rownames(tmp)[which.max(idx)])
+    if(length(idx) == 1){
+      i <- which.max(unlist(lapply(strsplit(ft$ann, "; "), length))) 
+    } else if(length(idx) > 1){
+      print(k)
+      i <- 1
+    }
     ft$annotation[i] <- "[M*H]*"
     for(j in 1:nrow(ft)){
       mzrange <- (ft$mzmed[j] - ft$mzmed[i]) + 0.01 * c(-1, 1)
@@ -119,10 +127,6 @@ for(k in 1:length(FG)
   }
 }
 
-for(i in 1:length(features)){
-  features$ann[i] <- unique(unlist(strsplit(features$ann[i], "; ")))
-}
-
 rm(k, FG, add)
 features$annotation[features$polarity == "NEG"] <- gsub("\\*", "-", features$annotation[features$polarity == "NEG"])
 features$annotation[features$polarity == "POS"] <- gsub("\\*", "+", features$annotation[features$polarity == "POS"])
@@ -148,11 +152,12 @@ features <- features[order(features$FGx), ]
 # annotate 13C
 # check MS2 relationships splitted in different FG
 
-
+View(features[,c("mzmed", "rtmed", "FG", "MS2", "polarity", "mzneut", "ann", "annotation", "FGx", "cmp")])
 
 unique(features$FGx)
-sum(features$FGx == "N_FG008")
-unique(features$FG[features$FGx == "N_FG008"])
+ft <- "N_FG008"
+sum(features$FGx == ft)
+unique(features$FG[features$FGx == ft])
 
-sum(features$FG == "N_FG008")
+sum(features$FG == ft)
 sum(features$FG == "P_FG007")
