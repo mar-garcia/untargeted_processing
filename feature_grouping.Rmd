@@ -66,7 +66,8 @@ for(i in 1:length(featlist2)){
 # seed for FG number
 n <- 0
 
-for(l in 1:length(featlist2)){
+for(l in 1:length(featlist2)
+){
   i <- order(-ms2int)[l]
   
   # if there is any FT which mzval match with precursor "i"....
@@ -196,8 +197,9 @@ rm(add, data, ms2int, featlist2, ft, chr1, chr2, features.i, tmp,
 ## Correlations
 
 ```{r correlations}
-for(z in 1:nrow(features)
-){ # go feature by feature ("z")
+dt <- as.data.frame(t(featureValues(xdata, method = "sum", value = "into")))
+
+for(z in 1:nrow(features)){ # go feature by feature ("z")
   ft <- rownames(features)[z]
   # go only in case that feature "z":
   if(is.na(features$FG[rownames(features) == ft])){ 
@@ -214,32 +216,27 @@ for(z in 1:nrow(features)
       ((features$rtmin > 
           (features$rtmin[rownames(features)==ft] - (d.rt/2))) & 
          (features$rtmax) < 
-         (features$rtmax[rownames(features)==ft]+ (d.rt/2))),
+         (features$rtmax[rownames(features)==ft] + (d.rt/2))),
     ]
-    
     # correlate intensities
     if(nrow(features.i) > 1){
-      #  tmp <- data[!grepl("QC", rownames(data)), 
-      #              colnames(data) %in% rownames(features.i)]
-      #  cor.i <- c()
-      #  for(i in seq(ncol(tmp))){
-      #    tmp2 <- cbind(tmp[, ft], tmp[,i])
-      #    if(sum(complete.cases(tmp2))>1){
-      #      cor.i <- c(cor.i, cor(log2(tmp2[,1]), log2(tmp2[,2]), 
-      #                            use = "complete.obs"))
-      #    } else {
-      #      cor.i <- c(cor.i, 0)
-      #    }
-      #  }
-      #  features.i$cor_int <- cor.i
-      #  features.i <- features.i[features.i$cor_int > cor.thr.i,]
+      
+      tmp <- dt[!grepl("QC", rownames(dt)), 
+                colnames(dt) %in% rownames(features.i)]
+      cor.i <- c()
+      for(i in seq(ncol(tmp))){
+        tmp2 <- cbind(tmp[, ft], tmp[,i])
+        if(sum(complete.cases(tmp2))>1){
+          cor.i <- c(cor.i, cor(log2(tmp2[,1]), log2(tmp2[,2]), 
+                                use = "complete.obs"))
+        } else {
+          cor.i <- c(cor.i, 0)
+        }
+      }
+      features.i$cor_int <- cor.i
+      features.i <- features.i[features.i$cor_int > 0.7,]
       
       # correlate peak shapes
-      #xdata_n <- filterFile(
-      #  xdata, 
-      #  which(xdata$file_name == 
-      #          gsub("mzData", "mzXML", 
-      #               rownames(data)[order(data[, ft], decreasing=TRUE)[1]])))
       xdata_n <- xdata
       rtr <- c(min(features.i$rtmin), 
                max(features.i$rtmax)) + d.rt * c(-1, 1)
@@ -258,18 +255,22 @@ for(z in 1:nrow(features)
       features.i$cor_ps[is.na(features.i$cor_ps)] <- 0
       features.i$cor_ps[rownames(features.i) == ft] <- 1
       features.i <- features.i[features.i$cor_ps > 0.9,]
-    } else if(nrow(features.i) == 1){
+      
+      
+    }else if(nrow(features.i) == 1){
       features.i$cor_int <- 1
       features.i$cor_ps <- 1
     }
     
+    
+    
     # add the info of grouped peaks in results matrix
     idx <- which(rownames(features) %in% rownames(features.i))
-    if(any(!is.na(features.i$FG[idx]))){
+    if(any(!is.na(features$FG[idx]))){
       if(length(unique(features$FG[idx][!is.na(
         features$FG[idx])])) == 1){
-        features$FG[idx] <- unique(features.i$FG[idx][!is.na(
-          features.i$FG[idx])])
+        features$FG[idx] <- unique(features.i$FG[!is.na(
+          features.i$FG)])
       } else {
         tmp <- features.i[!is.na(features.i$FG),]
         idx <- which(rownames(features) %in% 
@@ -281,11 +282,12 @@ for(z in 1:nrow(features)
     } else {
       features$FG[idx] <- sprintf("FG%03d", n)
     }
+    
   } # close if "is.na(cmp[z])"
   #save.image("data/RData/tmp.RData")
 } # close results "z"
-rm(chr1, chr2, features.i, tmp, xdata_n, i, n, rtr, z, z.mz, z.rt, ft, 
-   idx, d.rt)
+#rm(chr1, chr2, features.i, tmp, xdata_n, i, n, rtr, z, z.mz, z.rt, ft, 
+#   idx, d.rt)
 ```
 
 
