@@ -1,0 +1,234 @@
+---
+title: "Setup XCMS parameters"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+```
+
+In this document we're going to empirically determine some parameters for data processing.  
+For that we'll check a range of different compounds we know are present in the samples in the first and last 2 quality control (QC) samples injected along the sequence.  
+
+
+# Libraries
+
+```{r, message=FALSE}
+library(xcms)
+library(MetaboCoreUtils)
+library(DT)
+library(tidyverse)
+```
+
+
+# Data import
+
+```{r import}
+p <- "POS"
+fls <- list.files(paste0("data/", p, "_FS/fixed/"), full.names = TRUE)
+fls <- fls[grep("QC_X_1_|QC_X_2|QC_X_13|QC_X_14", fls)]
+fls <- fls[!grepl("eqQC", fls)]
+
+rdata <- readMSData(fls, mode = "onDisk")
+```
+
+
+# Compounds
+
+```{r cmps}
+cmps <- data.frame(
+  rbind(
+    c("Malic acid", "C4H6O5", 0.94),
+    c("Trigonelline", "C7H7NO2", 0.89),
+    c("Phenylalanine", "C9H11NO2", 1.83),
+    c("Caftaric acid", "C13H12O9", 3.44),
+    c("Catechin", "C15H14O6", 4.19),
+    c("Epicatechin", "C15H14O6", 4.63),
+    c("Quercetin-3-rhamnoside", "C21H20O11", 5.87),
+    c("Isorhamnetin", "C16H12O7", 8.00)
+  )
+)
+colnames(cmps) <- c("name", "formula", "RT")
+if(p == "POS"){
+  cmps <- cmps[!cmps$name %in% c("Malic acid", "Caftaric acid"),]
+} else if(p == "NEG"){
+  cmps <- cmps[!cmps$name %in% c("Trigonelline", "Phenylalanine"),]
+}
+cmps$RT <- as.numeric(cmps$RT)
+cmps$mass <- calculateMass(cmps$formula)
+datatable(cmps, rownames = FALSE) %>%
+  formatRound(columns = "RT", digits = 2) %>%
+  formatRound(columns = "mass", digits = 4)
+```
+
+
+# Chromatographic peak detection
+
+Most important parameters of the `centWave` algorithm are the following:  
+
+- `peakwidth` defines the minimal and maximal expected width of the peak in retention time dimension    
+- `ppm`
+
+
+## Peak width
+
+```{r}
+if(p == "POS"){
+  t_add <- "[M+H]+"
+} else if(p == "NEG"){
+  t_add <- "[M-H]-"
+}
+for(i in seq(nrow(cmps))){
+  t_mz <- as.numeric(mass2mz(cmps$mass[i], t_add))
+  register(SerialParam())
+  t_chr <- chromatogram(rdata, mz = t_mz + 0.01*c(-1, 1), rt = cmps$RT[i]*60 + 30 * c(-1, 1))
+  plot(t_chr, bty = "l", xaxt = "none", main = cmps$name[i])
+  axis(1, seq(0, 15, 0.05)*60, rep(NA, length(seq(0, 15, 0.05))))
+  axis(1, seq(0, 15, 0.1)*60, seq(0, 15, 0.1))
+}
+```
+
+`r if(p == "POS"){"I would say that peak widths moves between 0.1 and 0.3 minutes. In order to be more flexible I'll use a range between 0.05 and 0.4 minutes for 'peakwidth'."}`
+
+
+## Prefilter
+
+Peak definition: Number of data points (n) exceeding a certain intensity threshold (I).  
+Let's check which should be the intensity threshold considering a total of 5 consecutive data points.
+
+```{r}
+cmps$int_thr <- NA
+for(i in seq(nrow(cmps))){
+  t_mz <- as.numeric(mass2mz(cmps$mass[i], t_add))
+  t_mzppm <- rdata %>%
+    filterRt(cmps$RT[i]*60 + 20 * c(-1, 1)) %>%
+    filterMz(t_mz + 0.02 * c(-1, 1))
+  #plot(t_mzppm, type = "XIC")
+  t_int <- pippo <- t_mzppm %>%
+    intensity() %>%
+    unlist()
+  t_int <- tibble(id = names(pippo),
+                  intensity = pippo) %>%
+    separate(id, into = c("file", "spectrum"), sep = "\\.") %>%
+    group_by(file) %>%
+    arrange(desc(intensity)) %>%
+    nest(data = -file)
+  cmps$int_thr[i] <- t_int %>%
+    mutate(thr = map_dbl(data, ~.x$intensity[4])) %>%
+    pull(thr) %>%
+    min()
+}
+datatable(cmps, rownames = FALSE) %>%
+  formatRound(columns = "RT", digits = 2) %>%
+  formatRound(columns = "mass", digits = 4) %>%
+  formatRound(columns = "int_thr", digits = 0)
+```
+
+`r if(p == "POS"){"The minimum value is 221000 counts, but let's be more flexible and use a value of 100000 ppm."}`
+
+
+## ppm
+
+Based on [XCMS tutorial (section: Preprocessing of LC-MS data - Chromatographic peak detection)](https://jorainer.github.io/xcmsTutorials/articles/xcms-preprocessing.html#preprocessing-of-lc-ms-data), but filtering points according to intensity instead of further restricting the mz.  
+
+```{r, warning=FALSE}
+cmps$ppm <- NA
+for(i in seq(nrow(cmps))){
+  t_mz <- as.numeric(mass2mz(cmps$mass[i], t_add))
+  t_mzppm <- rdata %>%
+    filterRt(cmps$RT[i]*60 + 20 * c(-1, 1)) %>%
+    filterMz(t_mz + 0.02 * c(-1, 1))
+  #plot(t_mzppm, type = "XIC")
+  t_int <- t_mzppm %>%
+    intensity() %>%
+    unlist() %>%
+    quantile(0.5)
+  t_idx <- t_mzppm %>%
+    intensity() %>%
+    unlist() > t_int
+  t_mzppm <- t_mzppm %>%
+    mz() %>%
+    unlist()
+  t_mzdiff <- t_mzppm[t_idx] %>%
+    diff() %>%
+    abs()
+  cmps$ppm[i] <- paste(round(range((t_mzdiff * 1e6 / t_mz)), 0), collapse = "-")
+}
+
+datatable(cmps, rownames = FALSE) %>%
+  formatRound(columns = "RT", digits = 2) %>%
+  formatRound(columns = "mass", digits = 4) %>%
+  formatRound(columns = "int_thr", digits = 0)
+```
+
+`r if(p == "POS"){"Let's use a value of 5 ppm."}`
+
+
+## noise
+
+Let's check the minimum intensity measured within each spectra and then take the median of all of them.
+
+```{r}
+tmp <- rdata %>% 
+  intensity()
+median(unlist(lapply(tmp, function(x) quantile(x, 0))))
+```
+
+
+## Evaluation
+
+Let's see if with these parameters we are able to detect these peaks in the samples.
+
+```{r}
+cwp <- CentWaveParam(peakwidth = c(0.05, 0.4)*60, 
+                     prefilter = c(5, 100000),
+                     ppm = 5,
+                     noise = 10000,
+                     integrate = 2)
+```
+
+We set `integrate = 2` because this works particularly well for non-gaussian peak shapes and ensures that also signal from the peak’s tail is integrated.  
+
+```{r}
+for(i in seq(nrow(cmps))){
+  t_mz <- as.numeric(mass2mz(cmps$mass[i], t_add))
+  register(SerialParam())
+  t_chr <- chromatogram(rdata, mz = t_mz + 0.01*c(-1, 1), rt = cmps$RT[i]*60 + 30 * c(-1, 1))
+  t_chr2 <- findChromPeaks(t_chr, param = cwp)
+  plot(t_chr2, bty = "l", xaxt = "none", main = cmps$name[i])
+  axis(1, seq(0, 15, 0.05)*60, rep(NA, length(seq(0, 15, 0.05))))
+  axis(1, seq(0, 15, 0.1)*60, seq(0, 15, 0.1))
+  rm(t_chr2)
+}
+```
+
+
+`r if(p == "POS"){"We are not able to detect any of these peaks.... This could be related with the 'snthresh2 parameter, which default parameter is 10. Let's try with 5."}`
+
+
+```{r, eval = (p == "POS")}
+cwp@snthresh <- 5
+for(i in seq(nrow(cmps))){
+  t_mz <- as.numeric(mass2mz(cmps$mass[i], t_add))
+  register(SerialParam())
+  t_chr <- chromatogram(rdata, mz = t_mz + 0.01*c(-1, 1), rt = cmps$RT[i]*60 + 30 * c(-1, 1))
+  t_chr2 <- findChromPeaks(t_chr, param = cwp)
+  plot(t_chr2, bty = "l", xaxt = "none", main = cmps$name[i])
+  axis(1, seq(0, 15, 0.05)*60, rep(NA, length(seq(0, 15, 0.05))))
+  axis(1, seq(0, 15, 0.1)*60, seq(0, 15, 0.1))
+  rm(t_chr2)
+}
+```
+
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+#devtools::session_info()
+```

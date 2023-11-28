@@ -1,0 +1,51 @@
+---
+title: "Fast fourier transform artefact filter"
+author: "Mar Garcia-Aloy"
+output: 
+  html_document:
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r startpoint, include = FALSE}
+startpoint <- Sys.time()
+```
+
+
+## Libraries
+
+```{r libraries}
+library(Spectra)
+```
+
+
+# Fix files
+
+```{r fix-files}
+for(p in c("NEG", "POS")){
+  files <- outnames <- list.files(paste0("data/", p, "_FS/mzML/"), 
+                                  full.names = T, recursive = T)
+  dir.create(paste0("data/", p, "_FS/fixed"), showWarnings = FALSE)
+  outnames <- sub(paste0("data/", p, "_FS/mzML/"), 
+                  paste0("data/", p, "_FS/fixed/"), outnames)
+  files    <- files[!file.exists(outnames)]
+  outnames <- outnames[!file.exists(outnames)]
+  for(i in seq(length(files))){
+    fl <- files[i]
+    sps <- Spectra(fl)
+    sps <- filterFourierTransformArtefacts(sps, halfWindowSize = 0.3)
+    export(sps, backend = MsBackendMzR(), format = "mzML", 
+           file = outnames[i], 
+           copy = TRUE)
+  }
+}
+```
+
+
+# Session information
+
+```{r session}
+Sys.time()-startpoint
+#devtools::session_info()
+```
